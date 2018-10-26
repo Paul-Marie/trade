@@ -1,5 +1,4 @@
 # trade
-trade Trade TRADE epitech
 
 # Summary
 
