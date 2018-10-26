@@ -1,0 +1,10 @@
+08/06:
+- ADD push_index (v0.1)
+
+11/06:
+- UPDATE push_index (v1.0) : thread deletion
+- ADD test_client (v1.0)
+- ADD server (v1.0)
+
+12/06:
+- UPDATE server (v1.1) : negative shares management

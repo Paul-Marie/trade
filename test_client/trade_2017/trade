@@ -1,0 +1,253 @@
+#!/usr/bin/env python3
+
+from signal import SIGTERM
+from os import getpid, kill
+from sys import argv, stdin, stdout, stderr, exit
+from math import sqrt, pi
+from bollinger import Pronostic, GetLoad, CheckFile, GoldenRatio, Rescale
+from tkinter import *
+
+class   TradeError(Exception):
+    def __init__(self, message, errors = "BadArgumentError"):
+        super().__init__(message)
+        self.errors = errors
+
+class   Trade():
+    taxe = 0
+    incr = 88
+    period = 20
+    width = 1672
+    height = 1120
+    coefficient = 0.5
+    market_number = 4
+    initial_money = 10000
+    sd_coef = GoldenRatio()
+    old = {"crypto" : 0, "stock_exchange" : 0, "raw_material" : 0, "forex" : 0}
+    share = {"crypto" : 0, "stock_exchange" : 0, "raw_material" : 0, "forex" : 0}
+    price = {"crypto" : [], "stock_exchange" : [], "raw_material" : [], "forex" : []}
+    color = {"crypto" : "#FF00FF", "stock_exchange" : "#FFFFFF",
+             "raw_material" : "#00FFFF", "forex" : "#FFFF00"}
+
+    def __init__(self, little_name = None):
+        self.response = [0 for i in range(self.market_number)]
+        self.window = Tk()
+        self.window.title("ATAGUI - Autonomous Trading Algorythm with GUI")
+        self.canvas = Canvas(self.window, width=self.width, height=self.height, background="black")
+        self.background = PhotoImage(file = "../test_client/trade_2017/background.png")
+        self.canvas.create_image(0, 0, anchor = NW, image = self.background)
+        self.money = self.initial_money
+        self.little_name = little_name
+        self.canvas.pack()
+        self.canvas.update()
+
+    def Pull(self):
+        """ Pull the required value """
+        self.response = [stdin.readline()[:-1] for i in range(self.market_number)]
+        if len(self.response[0]) == 0:
+            self.response = None
+            return
+        for i in range(self.market_number):
+            self.price[self.response[i].split(":")[0]].insert(0, float(self.response[i].split(":")[1]))
+            if len(self.price[self.response[i].split(":")[0]]) > self.period:
+                self.price[self.response[i].split(":")[0]].pop()
+            if self.response[i].split(":")[0] == self.little_name:
+                self.little.insert(0, float(self.response[i].split(":")[1]))
+                if len(self.little) > self.period:
+                    self.little.pop()
+
+    def Buy(self, X, Y):
+        """ Buy the required quantity Y of X """
+        if self.money - (int(Y) * self.price[X][0] * (1 + self.taxe)) < 0:
+            raise TradeError("Not Enough Money")
+        self.share[X] += int(Y)
+        self.money -= int(Y) * self.price[X][0] * (1 + self.taxe)
+        print(f"BUY:{str(int(Y))}:{str(X)}", flush = True)
+
+    def Sell(self, X, Y):
+        """ Buy the required quantity Y of X """
+        if (self.share[X] - int(Y)) * (1 + self.taxe) < 0:
+            raise TradeError("Not Enough Share")
+        self.share[X] -= int(Y)
+        self.money += int(Y) * self.price[X][0] * (1 + self.taxe)
+        print(f"SELL:{str(int(Y))}:{str(X)}", flush = True)
+
+    def GetSpeculated(self):
+        """ Get the value of all money and all share converted into money """
+        return self.money + sum([self.share[i] * self.price[i][0] * (1 + self.taxe) for i in self.price])
+
+    def GetCoefficient(self):
+        """ Get the maximum value of each dictionary to get maximum value """
+        self.coefficient = max([max([j for j in self.price[i]]) for i in self.price])
+
+    def GetLittle(self):
+        """ Get the minimum value of each dictionary to get shortest money """
+        self.little = min([min([j for j in self.price[i]]) for i in self.price])
+        for i in self.price:
+            if min([j for j in self.price[i]]) == self.little:
+                self.little_name = i
+        self.little, self.upper, self.lower = [], [], []
+
+    def DrawGraph(self, count):
+        """ Update the graph """
+        self.canvas.delete("all")
+        self.canvas.create_image(0, 0, anchor = NW, image = self.background)
+        self.DrawGrid(count)
+        for nb in range(self.market_number):
+            market = self.response[nb].split(":")[0]
+            for i in range(len(self.price[market]) - 1):
+                self.canvas.create_line(i * self.incr,
+                    Rescale(self.price[market][i], self.coefficient, self.incr),
+                    i * self.incr + self.incr,
+                    Rescale(self.price[market][i + 1], self.coefficient, self.incr),
+                    fill = self.color[market], width = 3)
+        if count >= self.period:
+            self.DrawBands(count)
+        self.DrawInfo(count)
+        self.canvas.update()
+
+    def DrawGrid(self, count):
+        """ Draw all the grids """
+        for i in range(0, self.width, self.incr):
+            self.canvas.create_line(i, 100, i, 700, fill = "#696969", width = 1)
+        for i in range(100, 800, 100):
+            self.canvas.create_line(0, i, self.width, i, fill = "#696969", width = 1)
+        self.canvas.create_rectangle(self.incr * 4, self.height - self.incr * 3.5,
+            self.width - self.incr * 4, self.height, fill = "black", width = 3)
+        for i in range(int(self.height - self.incr * 3.5), self.height, int(self.incr / 4)):
+            self.canvas.create_line(self.incr * 4, i, self.width - self.incr * 4,
+                i, fill = "#696969", width = 1)
+        for i in range(self.incr * 4, self.width - self.incr * 4 + 1, int(self.incr / 4)):
+            self.canvas.create_line(i, self.height - self.incr * 3.5, i, self.height,
+                fill = "#696969", width = 1)
+
+    def DrawBands(self, count):
+        """ Draw Bollinger Bands for little value """
+        value = self.little[0]
+        mobile_average = float(sum([float(self.little[i])
+            for i in range(len(self.little))])) / float(self.period)
+        standard_derivation = sqrt(sum([pow(self.little[i] - mobile_average, 2)
+            for i in range(len(self.little))]) / self.period)
+        upper_band = mobile_average + (standard_derivation * self.sd_coef)
+        lower_band = mobile_average - (standard_derivation * self.sd_coef)
+        self.upper.insert(0, upper_band)
+        self.lower.insert(0, lower_band)
+        if len(self.upper) >= self.period:
+            self.upper.pop()
+        if len(self.lower) >= self.period:
+            self.lower.pop()
+        if count >= self.period:
+            for i in range(len(self.little) - 1):
+                self.canvas.create_line((i * self.incr / 1.725) + self.incr * 4,
+                    self.height - self.incr * 4 + (self.little[i] - 1) * 5000 - 200,
+                    (i * self.incr / 1.725) + self.incr * 4 + self.incr / 1.725,
+                    self.height - self.incr * 4 + (self.little[i + 1] - 1) * 5000 - 200,
+                    fill = "#FFFF00", width = 2)
+            for i in range(len(self.upper) - 1):
+                self.canvas.create_line((i * self.incr / 1.635) + self.incr * 4,
+                    self.height - self.incr * 4 + (self.upper[i] - 1) * 5000 - 200,
+                    (i * self.incr / 1.635) + self.incr * 4 + self.incr / 1.635,
+                    self.height - self.incr * 4 + (self.upper[i + 1] - 1) * 5000 - 200,
+                    fill = "#FF6600", width = 3)
+                self.canvas.create_line((i * self.incr / 1.635) + self.incr * 4,
+                    self.height - self.incr * 4 + (self.lower[i] - 1) * 5000 - 200,
+                    (i * self.incr / 1.635) + self.incr * 4 + self.incr / 1.635,
+                    self.height - self.incr * 4 + (self.lower[i + 1] - 1) * 5000 - 200,
+                    fill = "#FF0000", width = 3)
+
+    def DrawInfo(self, count):
+        """ Draw all the grids """
+        offset = 200
+        shift = self.incr * 9
+        for i in self.price.keys():
+            self.canvas.create_text(self.incr / 2, shift, fill = self.color[i], anchor = NW,
+                font="Times 20", text = i + (":\t" if len(i) > 9 else ":\t\t") + str(self.share[i]))
+            self.canvas.create_text(offset, 20, fill = self.color[i], font="Times 20", text = i)
+            (self.canvas.create_text(offset, 65, fill = "#00FF00", font="Times 30",
+                text = "\u25B2" + str(self.price[i][0])) if self.price[i][0] >= self.old[i]
+             else self.canvas.create_text(offset, 65, fill = "red", font="Times 30",
+                text = "\u25BC" + str(self.price[i][0])))
+            self.canvas.create_text(self.width / 2, 10, fill = "black",
+                anchor = NW, text = str(count), font = "Times 20")
+            self.canvas.create_rectangle(self.incr * 7, self.incr * 8, self.incr * 12,
+                self.incr * 9, fill = "white", width = 3)
+            self.canvas.create_text(self.width / 2, self.incr * 8 + self.incr / 3,
+                font = "Times 30", fill = "black", text = f"{self.money:,.2f}$")
+            self.canvas.create_text(self.width / 2, self.incr * 8 + self.incr / 1.3,
+                font = "Times 20", fill = "black", text = f"{self.GetSpeculated():,.2f}$")
+            self.old[i] = self.price[i][0]
+            offset += 425
+            shift += self.incr / 2
+
+    def DrawLobby(self, count):
+        """ Draw the lobby """
+        tmp = "Wait..."
+        tmp = tmp[:4 + (count % 4)]
+        background = PhotoImage(file = "../test_client/trade_2017/bg.png")
+        self.canvas.create_image(0, 0, anchor = NW, image = background)
+        self.canvas.create_text(self.width / 2, self.height / 2 - 50, font = "Times 60",
+            fill = "white", text = "ATAGUI  is  calculating")
+        result = self.canvas.create_text(self.width / 2 - 75, self.height / 2 + 30,
+            font = "Times 70", fill = "white", anchor = W, text = tmp)
+        self.canvas.update()
+        self.canvas.delete(result)
+
+# Do not put more information in this function, it's must be clearer as possible
+def     main():
+    """ Main function who perform program's core action like arguments resolution """
+    CheckFile(argv)
+    bot = Trade()
+    count = 0
+    bot.period = 20
+    while True:
+        bot.Pull()
+        if count == 0:
+            bot.GetLittle()
+        if bot.response == None:
+            [bot.Sell(i, bot.share[i]) if bot.share[i] >= 1 else None for i in bot.price]
+            print("EXIT", flush = True)
+            break
+        if count >= bot.period:
+            if count == bot.period:
+                bot.GetCoefficient()
+            if bot.money >= bot.initial_money * 1.5:
+                tmp = dict((j[0], i) for i, j in bot.price.items())
+                market = tmp[max(tmp)]
+                tmp = Pronostic(bot.price[market], bot.period, bot.sd_coef / (1 + (pi / 10)))
+                try:
+                    if tmp < 0:
+                        bot.Buy(market, GetLoad(count))
+                    elif tmp > 0 and bot.share[market] > 0:
+                        bot.Sell(market, bot.share[market] * GetLoad(count))
+                except TradeError as error:
+                    continue
+            else:
+                for i in range(bot.market_number):
+                    market = bot.response[i].split(":")[0]
+                    tmp = Pronostic(bot.price[market], bot.period, 1.5)
+                    try:
+                        if tmp < 0:
+                            bot.Buy(market, GetLoad(count))
+                        elif tmp > 0 and bot.share[market] > 0:
+                            bot.Sell(market, bot.share[market])
+                    except TradeError as error:
+                        continue
+            bot.DrawGraph(count)
+        else:
+            bot.DrawLobby(count)
+        count += 1
+
+if __name__ == "__main__":
+    try:
+        main()
+    except (KeyboardInterrupt, TclError) as error:
+        if (type(error) == KeyboardInterrupt):
+            stderr.write("\n")
+        stderr.write("\033[32m\033[1m[SUCCESS]\033[0m: Killed\n")
+        kill(getpid() - 1, SIGTERM)
+        kill(getpid() + 1, SIGTERM)
+        exit(0)
+    except BaseException as error:
+        stdout.write("\033[31m\033[1m[ECHEC]\033[0m:\n")
+        stdout.write(str(type(error).__name__) + ": {}\n".format(error))
+        kill(getpid() - 1, SIGTERM)
+        exit(0)
